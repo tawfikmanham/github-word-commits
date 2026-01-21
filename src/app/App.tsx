@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function App() {
-  const [inputText, setInputText] = useState('GAME ON');
+  const [inputValue, setInputValue] = useState('GAME ON');
+  const [committedText, setCommittedText] = useState('GAME ON');
+  const [revealColumns, setRevealColumns] = useState<number | null>(null);
+  const [revealToken, setRevealToken] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
 
   // Letter patterns for "GAME ON" - each letter is 7 rows tall (full height), varying widths
@@ -567,6 +570,50 @@ export default function App() {
     ]
   };
 
+  const letterSpacing = 2;
+
+  const getWordWidth = (word: string) => {
+    return word.split("").reduce((sum, ch, idx) => {
+      const pattern = letterPatterns[ch];
+      if (!pattern) {
+        return sum;
+      }
+      const letterWidth = pattern[0]?.length ?? 0;
+      const spacing = idx === word.length - 1 ? 0 : letterSpacing;
+      return sum + letterWidth + spacing;
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (revealToken === 0) {
+      return;
+    }
+
+    const totalColumns = getWordWidth(committedText);
+    if (totalColumns === 0) {
+      setRevealColumns(null);
+      return;
+    }
+
+    let current = 0;
+    setRevealColumns(0);
+
+    const interval = setInterval(() => {
+      current += 1;
+      setRevealColumns(current);
+      if (current >= totalColumns) {
+        setRevealColumns(null);
+        clearInterval(interval);
+      }
+    }, 60);
+
+    return () => clearInterval(interval);
+  }, [committedText, revealToken]);
+
+  const wordWidth = getWordWidth(committedText);
+  const wordStartWeek = Math.max(0, Math.floor((53 - wordWidth) / 2));
+  const wordEndWeek = Math.min(53, wordStartWeek + wordWidth);
+
   // Generate contribution data for 53 weeks (7 days per week)
   const generateContributionData = () => {
     const data: number[][] = [];
@@ -581,9 +628,10 @@ export default function App() {
       data.push(weekData);
     }
     
-    // Place "GAME ON" pattern starting at week 3
-    const word = inputText;
-    let currentWeek = 3;
+    // Center the word pattern within the 53-week grid
+    const word = committedText;
+    let currentWeek = wordStartWeek;
+    let wordColumnIndex = 0;
     
     for (let i = 0; i < word.length; i++) {
       const letter = word[i];
@@ -592,9 +640,10 @@ export default function App() {
       if (pattern) {
         // Place each column of the letter
         for (let col = 0; col < pattern[0].length; col++) {
+          const columnRevealed = revealColumns === null || wordColumnIndex < revealColumns;
           for (let row = 0; row < pattern.length; row++) {
             const value = pattern[row][col];
-            if (currentWeek < 53 && row < 7) {
+            if (currentWeek < 53 && row < 7 && columnRevealed) {
               if (value > 0) {
                 // Use varying shades of green for visual interest
                 const shades = [2, 3, 3, 4, 4, 4]; // Mostly bright, some medium
@@ -607,15 +656,20 @@ export default function App() {
             }
           }
           currentWeek++;
+          wordColumnIndex++;
         }
         // Add spacing between letters (2 columns)
-        currentWeek += 2;
+        currentWeek += letterSpacing;
+        wordColumnIndex += letterSpacing;
       }
     }
     
     // Add minimal random contributions throughout the rest of the year
     for (let week = 0; week < 53; week++) {
       for (let day = 0; day < 7; day++) {
+        if (week >= wordStartWeek && week < wordEndWeek) {
+          continue;
+        }
         if (data[week][day] === 0 && Math.random() < 0.02) {
           const level = Math.floor(Math.random() * 3) + 1;
           data[week][day] = level;
@@ -708,13 +762,20 @@ export default function App() {
               <div className="flex gap-[3px]">
                 {contributions.map((week, weekIdx) => (
                   <div key={weekIdx} className="flex flex-col gap-[3px]">
-                    {week.map((level, dayIdx) => (
-                      <div
-                        key={`${weekIdx}-${dayIdx}`}
-                        className={`w-[11px] h-[11px] rounded-[2px] ${getContributionColor(level)} border border-[#1c2128]`}
-                        title={`${level} contributions`}
-                      />
-                    ))}
+                    {week.map((level, dayIdx) => {
+                      const columnInWord = weekIdx - wordStartWeek;
+                      const isRevealColumn =
+                        revealColumns !== null && columnInWord === revealColumns - 1;
+                      const shouldGlow = isRevealColumn && level > 0;
+
+                      return (
+                        <div
+                          key={`${weekIdx}-${dayIdx}`}
+                          className={`w-[11px] h-[11px] rounded-[2px] ${getContributionColor(level)} border border-[#1c2128] ${shouldGlow ? 'glow-ripple' : ''}`}
+                          title={`${level} contributions`}
+                        />
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -749,21 +810,30 @@ export default function App() {
             <input
               id="custom-text"
               type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value.toUpperCase())}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value.toUpperCase())}
               onKeyDown={(e) => {
                 // Ensure Cmd+A / Ctrl+A works for select all
                 if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
                   // Allow default behavior
                   return;
                 }
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setCommittedText(inputValue);
+                  setRevealToken((prev) => prev + 1);
+                }
               }}
               placeholder="Type your message..."
               className="w-full px-4 py-2 pr-10 bg-[#0d1117] border border-[#30363d] rounded-md text-white placeholder:text-[#7d8590] focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff] transition-colors"
             />
-            {inputText && (
+            {inputValue && (
               <button
-                onClick={() => setInputText('')}
+                onClick={() => {
+                  setInputValue('');
+                  setCommittedText('');
+                  setRevealColumns(null);
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7d8590] hover:text-white transition-colors p-1"
                 title="Clear text"
               >

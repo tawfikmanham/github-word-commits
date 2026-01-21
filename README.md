@@ -1,7 +1,7 @@
 
-  # Create Design Prototype
+# github-word-commits
 
-  This is a code bundle for Create Design Prototype. The original project is available at https://www.figma.com/design/qg85HFLAorfTmEcpE7UeRX/Create-Design-Prototype.
+This is a code bundle for github-word-commits. The original project is available at https://www.figma.com/design/qg85HFLAorfTmEcpE7UeRX/Create-Design-Prototype.
 
   ## Running the code
 
